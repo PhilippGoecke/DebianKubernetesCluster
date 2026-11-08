@@ -90,18 +90,18 @@ export KUBECONFIG=/etc/kubernetes/admin.conf
 
 # 7. Control-Plane Taints entfernen (Ermöglicht Worker-Funktionalität)
 echo "[7/13] Entferne Node-Taints für Single-Node-Betrieb..."
-kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
-kubectl taint nodes --all node-role.kubernetes.io/master- || true
+kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
+kubectl taint nodes --all node-role.kubernetes.io/master- 2>/dev/null || true
 
 # 8. Cilium CLI installieren
 echo "[8/13] Installiere Cilium CLI..."
 # CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)
-CLI_ARCH=amd64
+CILIUM_ARCH=amd64
 
-curl -L --fail --remote-name-all https://github.com/cilium/cilium-cli/releases/download/${CILIUM_VERSION}/cilium-linux-${CLI_ARCH}.tar.gz{,.sha256sum}
+curl -L --fail --remote-name-all "https://github.com/cilium/cilium-cli/releases/download/${CILIUM_VERSION}/cilium-linux-${CILIUM_ARCH}.tar.gz{,.sha256sum}"
 sha256sum --check cilium-linux-amd64.tar.gz.sha256sum
-tar xzvf cilium-linux-${CLI_ARCH}.tar.gz -C /usr/local/bin
-rm cilium-linux-${CLI_ARCH}.tar.gz
+tar xzvf cilium-linux-${CILIUM_ARCH}.tar.gz -C /usr/local/bin
+rm cilium-linux-${CILIUM_ARCH}.tar.gz
 
 # 9. MetalLB installieren (Wird benötigt, damit Ingress eine IP erhält)
 echo "[9/13] Installiere MetalLB für LoadBalancer-Support..."
