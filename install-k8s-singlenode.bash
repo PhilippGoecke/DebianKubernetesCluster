@@ -5,7 +5,7 @@ set -euo pipefail
 # KONFIGURATION
 # ==============================================================================
 KUBERNETES_VERSION="v1.37" # https://kubernetes.io/releases/
-CILIUM_VERSION="v1.20.4" # https://github.com/cilium/cilium/releases
+CILIUM_VERSION="v0.20.2" # https://github.com/cilium/cilium/releases
 POD_CIDR="10.244.0.0/16"
 METALLB_VERSION="v0.16.2" # https://github.com/metallb/metallb/releases
 LOCAL_PATH_VERSION="v0.0.37" # https://github.com/rancher/local-path-provisioner
