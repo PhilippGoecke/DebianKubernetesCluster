@@ -25,21 +25,21 @@ echo "=== Starte Provisionierung von $VM_NAME ==="
 # 1. Basis-Image herunterladen falls nicht vorhanden
 if [ ! -f "$BASE_IMAGE" ]; then
     echo "[*] Lade Debian Trixie Cloud Image herunter..."
-    sudo wget -O "$BASE_IMAGE" "$IMAGE_URL"
+    wget -O "$BASE_IMAGE" "$IMAGE_URL"
 fi
 
 # 2. Bestehende VM-Reste aufräumen
 if virsh dominfo "$VM_NAME" >/dev/null 2>&1; then
     echo "[!] VM $VM_NAME existiert bereits. Lösche alte Instanz..."
-    sudo virsh destroy "$VM_NAME" >/dev/null 2>&1 || true
-    sudo virsh undefine "$VM_NAME" --remove-all-storage || true
+    virsh destroy "$VM_NAME" >/dev/null 2>&1 || true
+    virsh undefine "$VM_NAME" --remove-all-storage || true
 fi
-sudo rm -f "$VM_DISK" "$SEED_ISO"
+rm -f "$VM_DISK" "$SEED_ISO"
 
 # 3. Eigenes VM-Disk-Image erstellen und vergrößern
 echo "[*] Erstelle VM-Festplatte ($DISK_SIZE)..."
-sudo qemu-img create -f qcow2 -F qcow2 -b "$BASE_IMAGE" "$VM_DISK"
-sudo qemu-img resize "$VM_DISK" "$DISK_SIZE"
+qemu-img create -f qcow2 -F qcow2 -b "$BASE_IMAGE" "$VM_DISK"
+qemu-img resize "$VM_DISK" "$DISK_SIZE"
 
 # 4. Cloud-Init Konfigurationen temporär erstellen
 echo "[*] Generiere Cloud-Init Konfiguration..."
@@ -81,24 +81,24 @@ EOF
 
 # 5. Cloud-Init Seed ISO bauen (NoCloud Datenquelle)
 echo "[*] Erstelle Cloud-Init Seed ISO..."
-sudo genisoimage -output "$SEED_ISO" -volid cidata -joliet -rock "$TEMP_DIR/user-data" "$TEMP_DIR/meta-data"
+genisoimage -output "$SEED_ISO" -volid cidata -joliet -rock "$TEMP_DIR/user-data" "$TEMP_DIR/meta-data"
 rm -rf "$TEMP_DIR"
 
 # 6. VM über virt-install starten
 echo "[*] Definiere und starte VM in libvirt..."
-sudo virt-install \
-    --name "$VM_NAME" \
-    --ram "$RAM_MB" \
-    --vcpus "$VCPUS" \
-    --os-variant "debian12" \
-    --disk "$VM_DISK,device=disk,bus=virtio" \
-    --disk "$SEED_ISO,device=cdrom" \
-    --network network="$NETWORK",model=virtio \
-    --graphics none \
-    --import \
-    --noautoconsole
+virt-install \
+  --name "$VM_NAME" \
+  --ram "$RAM_MB" \
+  --vcpus "$VCPUS" \
+  --os-variant "debian12" \
+  --disk "$VM_DISK,device=disk,bus=virtio" \
+  --disk "$SEED_ISO,device=cdrom" \
+  --network network="$NETWORK",model=virtio \
+  --graphics none \
+  --import \
+  --noautoconsole
 
 echo "=== Erfolg: $VM_NAME wurde erfolgreich provisioniert! ==="
-echo "[i] IP-Adresse ermitteln mit: sudo virsh net-dhcp-leases $NETWORK"
+echo "[i] IP-Adresse ermitteln mit: virsh net-dhcp-leases $NETWORK"
 echo "[i] Verbinden via SSH: ssh $USERNAME@<IP>"
 
