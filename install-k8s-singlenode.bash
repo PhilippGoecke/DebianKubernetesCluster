@@ -148,7 +148,7 @@ cilium install \
 
 # 11. Persistent Storage installieren (Local Path Provisioner)
 echo "[11/13] Installiere Local Path Provisioner für PVC/PV Support..."
-kubectl apply -f "https://raw.githubusercontent.com/rancher/local-path-provisioner/{LOCAL_PATH_VERSION}/deploy/local-path-storage.yaml"
+kubectl apply -f "https://raw.githubusercontent.com/rancher/local-path-provisioner/${LOCAL_PATH_VERSION}/deploy/local-path-storage.yaml"
 kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 
 # 12. Systemprüfung
