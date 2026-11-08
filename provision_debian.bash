@@ -1,6 +1,20 @@
 #!/bin/bash
 set -euo pipefail
 
+# --- ERFORDERLICHE BEFEHLE PRÜFEN ---
+REQUIRED_COMMANDS=(wget virsh qemu-img mktemp genisoimage virt-install rm cat)
+MISSING_COMMANDS=()
+for cmd in "${REQUIRED_COMMANDS[@]}"; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    MISSING_COMMANDS+=("$cmd")
+  fi
+done
+
+if ((${#MISSING_COMMANDS[@]} > 0)); then
+  printf 'Fehler: Erforderliche Befehle fehlen: %s\n' "${MISSING_COMMANDS[*]}" >&2
+  exit 1
+fi
+
 # --- KONFIGURATION ---
 VM_NAME="debian-trixie-k8s-singlenode"
 RAM_MB=2048
@@ -94,11 +108,10 @@ virt-install \
   --disk "$VM_DISK,device=disk,bus=virtio" \
   --disk "$SEED_ISO,device=cdrom" \
   --network network="$NETWORK",model=virtio \
-  --graphics none \
+  --graphics vnc,listen=127.0.0.1,port=-1 \
   --import \
   --noautoconsole
 
 echo "=== Erfolg: $VM_NAME wurde erfolgreich provisioniert! ==="
 echo "[i] IP-Adresse ermitteln mit: virsh net-dhcp-leases $NETWORK"
 echo "[i] Verbinden via SSH: ssh $USERNAME@<IP>"
-
