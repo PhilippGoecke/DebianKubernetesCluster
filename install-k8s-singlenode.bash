@@ -5,7 +5,7 @@ set -euo pipefail
 # KONFIGURATION
 # ==============================================================================
 KUBERNETES_VERSION="v1.37" # https://kubernetes.io/releases/
-CILIUM_VERSION="1.20.4" # https://github.com/cilium/cilium/releases
+CILIUM_VERSION="v1.20.4" # https://github.com/cilium/cilium/releases
 POD_CIDR="10.244.0.0/16"
 METALLB_VERSION="v0.16.2" # https://github.com/metallb/metallb/releases
 LOCAL_PATH_VERSION="v0.0.37" # https://github.com/rancher/local-path-provisioner
@@ -95,11 +95,10 @@ kubectl taint nodes --all node-role.kubernetes.io/master- || true
 
 # 8. Cilium CLI installieren
 echo "[8/13] Installiere Cilium CLI..."
-CILIUM_CLI_VERSION=$(curl -s https://githubusercontent.com)
+# CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)
 CLI_ARCH=amd64
-if [ "$(uname -m)" = "aarch64" ]; then CLI_ARCH=arm64; fi
 
-curl -L --fail --remote-name-all https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-${CLI_ARCH}.tar.gz{,.sha256sum}
+curl -L --fail --remote-name-all https://github.com/cilium/cilium-cli/releases/download/${CILIUM_VERSION}/cilium-linux-${CLI_ARCH}.tar.gz{,.sha256sum}
 sha256sum --check cilium-linux-amd64.tar.gz.sha256sum
 tar xzvf cilium-linux-${CLI_ARCH}.tar.gz -C /usr/local/bin
 rm cilium-linux-${CLI_ARCH}.tar.gz
