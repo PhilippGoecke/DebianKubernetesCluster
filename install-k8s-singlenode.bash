@@ -153,7 +153,9 @@ kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storagec
 
 # 12. Systemprüfung
 echo "[12/13] Bereite Abschlussüberprüfung vor..."
-sleep 15
+kubectl wait --for=condition=Ready nodes --all --timeout=180s
+kubectl rollout status deployment/local-path-provisioner \
+  -n local-path-storage --timeout=120s
 
 # 13. Übersicht ausgeben
 echo "===================================================================="
@@ -165,3 +167,5 @@ echo "===================================================================="
 kubectl get nodes -o wide
 echo "--------------------------------------------------------------------"
 kubectl get service -n kube-system cilium-ingress
+echo "--------------------------------------------------------------------"
+kubectl get pods -n metallb-system
