@@ -30,8 +30,8 @@ VM_DISK="$POOL_DIR/${VM_NAME}.qcow2"
 SEED_ISO="$POOL_DIR/${VM_NAME}-seed.iso"
 
 # Gast-Betriebssystem Konfiguration
-USERNAME="debian"
-PASSWORD="SehrSicheresPasswort123!"
+USERNAME="user"
+PASSWORD="SuperSecurePassword123!"
 SSH_KEY_FILE="$HOME/.ssh/id_rsa.pub" # Wird injiziert, falls vorhanden
 
 echo "=== Starte Provisionierung von $VM_NAME ==="
@@ -114,4 +114,11 @@ virt-install \
 
 echo "=== Erfolg: $VM_NAME wurde erfolgreich provisioniert! ==="
 echo "[i] IP-Adresse ermitteln mit: virsh net-dhcp-leases $NETWORK"
-echo "[i] Verbinden via SSH: ssh $USERNAME@<IP>"
+VM_IP=$(virsh domifaddr "$VM_NAME" --source lease | awk '$3 == "ipv4" { sub(/\/.*/, "", $4); print $4; exit }')
+if [[ -n "$VM_IP" ]]; then
+  echo "[i] IP-Adresse: $VM_IP"
+  echo "[i] Verbinden via SSH: ssh $USERNAME@$VM_IP"
+else
+  echo "[!] IP-Adresse noch nicht verfügbar; später mit 'virsh domifaddr $VM_NAME --source lease' erneut prüfen."
+  echo "[i] Verbinden via SSH: ssh $USERNAME@<IP-ADDRESS>"
+fi
