@@ -112,7 +112,20 @@ virt-install \
   --import \
   --noautoconsole
 
+echo "[*] Warte darauf, dass das Gastsystem bereit ist (QEMU Guest Agent)..."
+BOOT_TIMEOUT=300
+BOOT_WAITED=0
+until virsh qemu-agent-command "$VM_NAME" '{"execute":"guest-ping"}' >/dev/null 2>&1; do
+  if ((BOOT_WAITED >= BOOT_TIMEOUT)); then
+    echo "Fehler: Gastsystem wurde innerhalb von ${BOOT_TIMEOUT}s nicht bereit." >&2
+    exit 1
+  fi
+  sleep 5
+  BOOT_WAITED=$((BOOT_WAITED + 5))
+done
+
 echo "=== Erfolg: $VM_NAME wurde erfolgreich provisioniert! ==="
+
 echo "[i] IP-Adresse ermitteln mit: virsh net-dhcp-leases $NETWORK"
 VM_IP=$(virsh domifaddr "$VM_NAME" --source lease | awk '$3 == "ipv4" { sub(/\/.*/, "", $4); print $4; exit }')
 if [[ -n "$VM_IP" ]]; then
