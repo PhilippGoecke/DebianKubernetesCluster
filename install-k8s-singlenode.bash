@@ -25,7 +25,7 @@ echo "================================================="
 # 1. Systemaktualisierung und Basispakete
 echo "[1/13] Aktualisiere Systemkomponenten..."
 apt update && apt upgrade -y
-apt install -y curl gnupg2 software-properties-common apt-transport-https ca-certificates lsb-release
+apt install -y curl gnupg2 apt-transport-https ca-certificates lsb-release
 
 # 2. Swap dauerhaft deaktivieren
 echo "[2/13] Deaktiviere Swap..."
