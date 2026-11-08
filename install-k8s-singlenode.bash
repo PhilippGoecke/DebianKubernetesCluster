@@ -1,0 +1,168 @@
+#!/bin/bash
+set -euo pipefail
+
+# ==============================================================================
+# KONFIGURATION
+# ==============================================================================
+KUBERNETES_VERSION="v1.37" # https://kubernetes.io/releases/
+CILIUM_VERSION="1.20.4" # https://github.com/cilium/cilium/releases
+POD_CIDR="10.244.0.0/16"
+METALLB_VERSION="v0.16.2" # https://github.com/metallb/metallb/releases
+LOCAL_PATH_VERSION="v0.0.37" # https://github.com/rancher/local-path-provisioner
+
+# Ermittelt automatisch die primäre IP-Adresse des Servers
+MASTER_IP=$(ip -o -4 route get 1.1.1.1 | awk '{print $7}')
+
+echo "=== Starte Kubernetes Komplett-Installation ==="
+echo "Node IP: ${MASTER_IP}"
+echo "Kubernetes Version: ${KUBERNETES_VERSION}"
+echo "Cilium Version: ${CILIUM_VERSION}"
+echo "Pod CIDR: ${POD_CIDR}"
+echo "MetalLB Version: ${METALLB_VERSION}"
+echo "Rancher/local-path Version: ${LOCAL_PATH_VERSION}"
+echo "================================================="
+
+# 1. Systemaktualisierung und Basispakete
+echo "[1/13] Aktualisiere Systemkomponenten..."
+apt update && apt upgrade -y
+apt install -y curl gnupg2 software-properties-common apt-transport-https ca-certificates lsb-release
+
+# 2. Swap dauerhaft deaktivieren
+echo "[2/13] Deaktiviere Swap..."
+swapoff -a
+sed -i '/swap/d' /etc/fstab
+
+# 3. Kernel-Module laden & Sysctl für Netzwerk-Routing anpassen
+echo "[3/13] Konfiguriere Kernel-Module und Netzwerk..."
+cat <<EOF | tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+EOF
+
+modprobe overlay
+modprobe br_netfilter
+
+cat <<EOF | tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+EOF
+
+sysctl --system
+
+# 4. Containerd (Container Runtime) installieren und konfigurieren
+echo "[4/13] Installiere und konfiguriere containerd..."
+apt install -y containerd
+
+mkdir -p /etc/containerd
+containerd config default | tee /etc/containerd/config.toml >/dev/null
+
+sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+systemctl restart containerd
+systemctl enable containerd
+
+# 5. Kubeadm, Kubelet und Kubectl installieren
+echo "[5/13] Installiere Kubernetes Komponenten (${KUBERNETES_VERSION})..."
+mkdir -p -m 755 /etc/apt/keyrings
+
+curl -fsSL "https://pkgs.k8s.io/core:/stable:/${KUBERNETES_VERSION}/deb/Release.key" | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/${KUBERNETES_VERSION}/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
+chmod 644 /etc/apt/sources.list.d/kubernetes.list
+
+apt update
+apt install -y kubelet kubeadm kubectl
+apt-mark hold kubelet kubeadm kubectl
+
+# 6. Kubernetes Cluster initialisieren (Ohne kube-proxy)
+echo "[6/13] Initialisiere Kubernetes Cluster..."
+kubeadm init \
+  --apiserver-advertise-address="${MASTER_IP}" \
+  --pod-network-cidr="${POD_CIDR}" \
+  --skip-phases=addon/kube-proxy
+
+# Kubeconfig für den aktuellen Root/Admin-User einrichten
+mkdir -p "$HOME/.kube"
+cp -i /etc/kubernetes/admin.conf "$HOME/.kube/config"
+chown "$(id -u):$(id -g)" "$HOME/.kube/config"
+
+export KUBECONFIG=/etc/kubernetes/admin.conf
+
+# 7. Control-Plane Taints entfernen (Ermöglicht Worker-Funktionalität)
+echo "[7/13] Entferne Node-Taints für Single-Node-Betrieb..."
+kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
+kubectl taint nodes --all node-role.kubernetes.io/master- || true
+
+# 8. Cilium CLI installieren
+echo "[8/13] Installiere Cilium CLI..."
+CILIUM_CLI_VERSION=$(curl -s https://githubusercontent.com)
+CLI_ARCH=amd64
+if [ "$(uname -m)" = "aarch64" ]; then CLI_ARCH=arm64; fi
+
+curl -L --fail --remote-name-all https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-${CLI_ARCH}.tar.gz{,.sha256sum}
+sha256sum --check cilium-linux-amd64.tar.gz.sha256sum
+tar xzvf cilium-linux-${CLI_ARCH}.tar.gz -C /usr/local/bin
+rm cilium-linux-${CLI_ARCH}.tar.gz
+
+# 9. MetalLB installieren (Wird benötigt, damit Ingress eine IP erhält)
+echo "[9/13] Installiere MetalLB für LoadBalancer-Support..."
+#kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.16.2/config/manifests/metallb-frr-k8s.yaml
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/${METALLB_VERSION}/config/manifests/metallb-native.yaml
+
+# Warte auf MetalLB Deployment
+echo "Warte auf MetalLB Controller..."
+kubectl rollout status deployment -n metallb-system controller --timeout=90s
+
+# MetalLB IP-Pool konfigurieren (Verwendet die IP des Host-Systems)
+cat <<EOF | kubectl apply -f -
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: local-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - ${MASTER_IP}/32
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: local-advertisement
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - local-pool
+EOF
+
+# 10. Cilium mit Ingress und Hubble installieren
+echo "[10/13] Installiere Cilium mit Ingress Controller und Hubble..."
+cilium install \
+  --version "${CILIUM_VERSION}" \
+  --set kubeProxyReplacement=true \
+  --set k8sServiceHost="${MASTER_IP}" \
+  --set k8sServicePort=6443 \
+  --set hubble.enabled=true \
+  --set hubble.relay.enabled=true \
+  --set hubble.ui.enabled=true \
+  --set ingressController.enabled=true \
+  --set ingressController.default=true
+
+# 11. Persistent Storage installieren (Local Path Provisioner)
+echo "[11/13] Installiere Local Path Provisioner für PVC/PV Support..."
+kubectl apply -f "kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/{LOCAL_PATH_VERSION}/deploy/local-path-storage.yaml"
+kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+# 12. Systemprüfung
+echo "[12/13] Bereite Abschlussüberprüfung vor..."
+sleep 15
+
+# 13. Übersicht ausgeben
+echo "===================================================================="
+echo "✓ Installation erfolgreich abgeschlossen!"
+echo "- StorageClass (Default): local-path"
+echo "- Ingress Class: cilium"
+echo "- Hubble UI aktivieren: cilium hubble ui"
+echo "===================================================================="
+kubectl get nodes -o wide
+echo "--------------------------------------------------------------------"
+kubectl get service -n kube-system cilium-ingress
