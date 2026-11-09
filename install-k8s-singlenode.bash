@@ -79,6 +79,8 @@ echo "[6/13] Initialisiere Kubernetes Cluster..."
 kubeadm init \
   --apiserver-advertise-address="${MASTER_IP}" \
   --pod-network-cidr="${POD_CIDR}" \
+  --control-plane-endpoint="${MASTER_IP}" \
+  --v=5 \
   --skip-phases=addon/kube-proxy
 
 # Kubeconfig für den aktuellen Root/Admin-User einrichten
