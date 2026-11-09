@@ -144,6 +144,35 @@ kubectl apply -f "https://raw.githubusercontent.com/metallb/metallb/${METALLB_VE
 echo "Warte auf MetalLB Controller..."
 kubectl rollout status deployment -n metallb-system controller --timeout=180s
 
+echo "Warte auf MetalLB Webhook-Endpunkte..."
+WEBHOOK_READY=false
+for ((attempt=1; attempt<=90; attempt++)); do
+  if [[ -n "$(kubectl get endpoints metallb-webhook-service -n metallb-system \
+    -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null)" ]] && \
+    kubectl create --dry-run=server -f - >/dev/null 2>&1 <<EOF
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  generateName: webhook-readiness-
+  namespace: metallb-system
+spec:
+  addresses:
+  - ${MASTER_IP}/32
+EOF
+  then
+    WEBHOOK_READY=true
+    break
+  fi
+  sleep 2
+done
+
+if [[ "${WEBHOOK_READY}" != true ]]; then
+  echo "Fehler: MetalLB Webhook ist nicht erreichbar oder lehnt den IP-Pool ab." >&2
+  kubectl get pods,services,endpoints -n metallb-system >&2 || true
+  kubectl logs -n metallb-system deployment/controller --tail=100 >&2 || true
+  exit 1
+fi
+
 # MetalLB IP-Pool konfigurieren (Verwendet die IP des Host-Systems)
 cat <<EOF | kubectl apply -f -
 apiVersion: metallb.io/v1beta1
