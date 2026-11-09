@@ -9,6 +9,8 @@ CILIUM_VERSION="v1.20.4" # https://github.com/cilium/cilium/releases
 POD_CIDR="10.244.0.0/16"
 METALLB_VERSION="v0.16.2" # https://github.com/metallb/metallb/releases
 LOCAL_PATH_VERSION="v0.0.37" # https://github.com/rancher/local-path-provisioner
+CNI_BIN_DIR="/opt/cni/bin"
+CNI_CONF_DIR="/etc/cni/net.d"
 
 # Ermittelt automatisch die primäre IP-Adresse des Servers
 MASTER_IP=$(ip -o -4 route get 1.1.1.1 | awk '{print $7}')
@@ -55,9 +57,16 @@ echo "[4/13] Installiere und konfiguriere containerd..."
 apt install -y containerd
 
 mkdir -p /etc/containerd
+mkdir -p "${CNI_BIN_DIR}" "${CNI_CONF_DIR}"
 containerd config default | tee /etc/containerd/config.toml >/dev/null
 
 sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+# Containerd und Cilium müssen dieselben CNI-Pfade verwenden.
+sed -i \
+  -e "s|^\([[:space:]]*bin_dir[[:space:]]*=[[:space:]]*\).*|\1\"${CNI_BIN_DIR}\"|" \
+  -e "s|^\([[:space:]]*bin_dirs[[:space:]]*=[[:space:]]*\).*|\1[\"${CNI_BIN_DIR}\"]|" \
+  -e "s|^\([[:space:]]*conf_dir[[:space:]]*=[[:space:]]*\).*|\1\"${CNI_CONF_DIR}\"|" \
+  /etc/containerd/config.toml
 systemctl restart containerd
 systemctl enable containerd
 
@@ -105,10 +114,13 @@ sha256sum --check cilium-linux-amd64.tar.gz.sha256sum
 tar xzvf cilium-linux-${CILIUM_ARCH}.tar.gz -C /usr/local/bin
 rm cilium-linux-${CILIUM_ARCH}.tar.gz
 
-# 9. MetalLB installieren (Wird benötigt, damit Ingress eine IP erhält)
+# 9. Cilium installieren und CNI-Bereitschaft prüfen
 echo "[9/13] Installiere Cilium mit Ingress Controller und Hubble..."
 cilium install \
   --version "${CILIUM_VERSION}" \
+  --set cni.install=true \
+  --set cni.binPath="${CNI_BIN_DIR}" \
+  --set cni.confPath="${CNI_CONF_DIR}" \
   --set kubeProxyReplacement=true \
   --set k8sServiceHost="${MASTER_IP}" \
   --set k8sServicePort=6443 \
@@ -117,6 +129,13 @@ cilium install \
   --set hubble.ui.enabled=true \
   --set ingressController.enabled=true \
   --set ingressController.default=true
+
+echo "Warte auf Cilium und die Installation des CNI-Plugins..."
+cilium status --wait --wait-duration 5m
+if [[ ! -x "${CNI_BIN_DIR}/cilium-cni" ]]; then
+  echo "Fehler: ${CNI_BIN_DIR}/cilium-cni fehlt oder ist nicht ausführbar." >&2
+  exit 1
+fi
 
 # 10. MetalLB erst nach dem CNI installieren, da seine Pods sonst nicht starten können.
 echo "[10/13] Installiere MetalLB für LoadBalancer-Support..."
