@@ -104,13 +104,24 @@ tar xzvf cilium-linux-${CILIUM_ARCH}.tar.gz -C /usr/local/bin
 rm cilium-linux-${CILIUM_ARCH}.tar.gz
 
 # 9. MetalLB installieren (Wird benötigt, damit Ingress eine IP erhält)
-echo "[9/13] Installiere MetalLB für LoadBalancer-Support..."
-#kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.16.2/config/manifests/metallb-frr-k8s.yaml
-kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/${METALLB_VERSION}/config/manifests/metallb-native.yaml
+echo "[9/13] Installiere Cilium mit Ingress Controller und Hubble..."
+cilium install \
+  --version "${CILIUM_VERSION}" \
+  --set kubeProxyReplacement=true \
+  --set k8sServiceHost="${MASTER_IP}" \
+  --set k8sServicePort=6443 \
+  --set hubble.enabled=true \
+  --set hubble.relay.enabled=true \
+  --set hubble.ui.enabled=true \
+  --set ingressController.enabled=true \
+  --set ingressController.default=true
 
-# Warte auf MetalLB Deployment
+# 10. MetalLB erst nach dem CNI installieren, da seine Pods sonst nicht starten können.
+echo "[10/13] Installiere MetalLB für LoadBalancer-Support..."
+kubectl apply -f "https://raw.githubusercontent.com/metallb/metallb/${METALLB_VERSION}/config/manifests/metallb-native.yaml"
+
 echo "Warte auf MetalLB Controller..."
-kubectl rollout status deployment -n metallb-system controller --timeout=90s
+kubectl rollout status deployment -n metallb-system controller --timeout=180s
 
 # MetalLB IP-Pool konfigurieren (Verwendet die IP des Host-Systems)
 cat <<EOF | kubectl apply -f -
@@ -132,19 +143,6 @@ spec:
   ipAddressPools:
   - local-pool
 EOF
-
-# 10. Cilium mit Ingress und Hubble installieren
-echo "[10/13] Installiere Cilium mit Ingress Controller und Hubble..."
-cilium install \
-  --version "${CILIUM_VERSION}" \
-  --set kubeProxyReplacement=true \
-  --set k8sServiceHost="${MASTER_IP}" \
-  --set k8sServicePort=6443 \
-  --set hubble.enabled=true \
-  --set hubble.relay.enabled=true \
-  --set hubble.ui.enabled=true \
-  --set ingressController.enabled=true \
-  --set ingressController.default=true
 
 # 11. Persistent Storage installieren (Local Path Provisioner)
 echo "[11/13] Installiere Local Path Provisioner für PVC/PV Support..."
